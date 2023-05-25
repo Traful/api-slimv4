@@ -12,13 +12,13 @@
 		}
 
 		public function getUsers() {
-			$query = "SELECT * FROM $this->table_name ORDER BY id";
+			$query = "SELECT id, email, firstname, lastname FROM $this->table_name ORDER BY id";
 			parent::getAll($query);
 			return $this;
 		}
 
 		public function getUser($id) {
-			$query = "SELECT * FROM $this->table_name WHERE id = :id";
+			$query = "SELECT id, email, firstname, lastname FROM $this->table_name WHERE id = :id";
 			parent::getOne($query, ["id" => $id]);
 			return $this;
 		}
