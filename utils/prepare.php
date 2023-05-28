@@ -24,5 +24,15 @@
 		public static function OnlyNumbers($mixed_input) {
 			return filter_var($mixed_input, FILTER_SANITIZE_NUMBER_INT);
 		}
+
+		public static function randomString($longitud = 10) {
+			$cadena = "";
+			$caracteres = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+			for ($i = 0; $i < $longitud; $i++) {
+				$posicion = rand(0, strlen($caracteres) - 1);
+				$cadena .= $caracteres[$posicion];
+			}
+			return $cadena;
+		}
 	}
 ?>

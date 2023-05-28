@@ -1,9 +1,100 @@
 <?php
-	use Psr\Http\Message\ResponseInterface as Response;
-	use Psr\Http\Message\ServerRequestInterface as Request;
+	use \Psr\Http\Message\ResponseInterface as Response;
+	use \Psr\Http\Message\ServerRequestInterface as Request;
 	use \Firebase\JWT\JWT;
+	use \PHPMailer\PHPMailer\PHPMailer;
+	use \PHPMailer\PHPMailer\SMTP;
+	use \PHPMailer\PHPMailer\Exception;
 	use \objects\Users;
 	use \utils\Validate;
+	use \utils\Prepare;
+
+	function sendTokenRegister($email, $nombre, $token) {
+		$mail = new PHPMailer(true); //true = enable exceptions
+		try {
+			//Server settings
+			//$mail->SMTPDebug = SMTP::DEBUG_SERVER;                      //Enable verbose debug output
+			$mail->SMTPDebug = 0;                      					//Enable verbose debug output
+			$mail->isSMTP();                                            //Send using SMTP
+			$mail->Host       = $_ENV["SMTP_HOST"];                     //Set the SMTP server to send through
+			$mail->SMTPAuth   = true;                                   //Enable SMTP authentication
+			$mail->Username   = $_ENV["SMTP_USERNAME"];                 //SMTP username
+			$mail->Password   = $_ENV["SMTP_PASSWORD"];                 //SMTP password
+			$mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;            //Enable implicit TLS encryption
+			$mail->Port       = $_ENV["SMTP_PORT"];                     //TCP port to connect to; use 587 if you have set `SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS`
+		
+			//Recipients
+			$mail->setFrom($_ENV["SMTP_USERNAME"], $_ENV["SMTP_SENDER_NAME"]);
+			$mail->addAddress($email, $nombre);     //Add a recipient
+			/*
+			$mail->addAddress("ellen@example.com");               //Name is optional
+			$mail->addReplyTo("info@example.com", "Information");
+			$mail->addCC("cc@example.com");
+			$mail->addBCC("bcc@example.com");
+			*/
+		
+			//Attachments
+			/*
+			$mail->addAttachment("/var/tmp/file.tar.gz");         //Add attachments
+			$mail->addAttachment("/tmp/image.jpg", "new.jpg");    //Optional name
+			*/
+		
+			//Content
+			$urlLink = $_ENV["APP_URL"] . "register/token/" . $token;
+
+			$mail->isHTML(true);                                  //Set email format to HTML
+			$mail->Subject = "Sheep Shit - Registro";
+			$body = <<<EOD
+				<h3>Hola <strong>{$nombre}</strong>.</h3>
+				<br/>
+				<p>Bienvenido/a a <strong>Sheep Shit</strong>.</p>
+				<p>Para completar el registro por favor visita este <a href='{$urlLink}' target='_blank' rel='nofollow noopener'>enlace</a>.</p>
+			EOD;
+			$mail->Body    = $body;
+			$mail->AltBody = "Hola " . $nombre . ", bienvenido/a a Sheep Shit, para completar el registro por favor visita este enlace: " . $urlLink;
+			$mail->send();
+			//echo "Message has been sent";
+			return true;
+		} catch (Exception $e) {
+			//echo "Message could not be sent. Mailer Error: {$mail->ErrorInfo}";
+			return false;
+		}
+	};
+
+	function sendTokenRecover($email, $token) {
+		$mail = new PHPMailer(true);
+		try {
+			$mail->SMTPDebug = 0;
+			$mail->isSMTP();
+			$mail->Host       = $_ENV["SMTP_HOST"];
+			$mail->SMTPAuth   = true;
+			$mail->Username   = $_ENV["SMTP_USERNAME"];
+			$mail->Password   = $_ENV["SMTP_PASSWORD"];
+			$mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+			$mail->Port       = $_ENV["SMTP_PORT"];
+		
+			$mail->setFrom($_ENV["SMTP_USERNAME"], $_ENV["SMTP_SENDER_NAME"]);
+			$mail->addAddress($email);
+
+			$urlLink = $_ENV["APP_URL"] . "recover/token/" . $token;
+
+			$mail->isHTML(true);
+			$mail->Subject = "Sheep Shit - Recuperación de contraseña";
+			$body = <<<EOD
+				<h3>Sheep Shit</h3>
+				<br/>
+				<p>Ups.. al perecer olvidaste tu contraseña, para poder generar una nueva por favor visita este <a href='{$urlLink}' target='_blank' rel='nofollow noopener'>enlace</a>.</p>
+			EOD;
+			$mail->Body    = $body;
+			$mail->AltBody = "Sheep Shit - Ups.. al perecer olvidaste tu contraseña, para poder generar una nueva por favor visita este enlace: " . $urlLink;
+			$mail->send();
+			//echo "Message has been sent";
+			return true;
+		} catch (Exception $e) {
+			//echo "Message could not be sent. Mailer Error: {$mail->ErrorInfo}";
+			return false;
+		}
+	};
 
 	//[GET]
 
@@ -19,6 +110,24 @@
 	$app->get("/user/{id:[0-9]+}", function (Request $request, Response $response, array $args) {
 		$users = new Users($this->get("db"));
 		$resp = $users->getUser($args["id"])->getResult();
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
+	$app->get("/user/register/temp/{token}", function (Request $request, Response $response, array $args) {
+		$resp = new \stdClass();
+		$users = new Users($this->get("db"));
+		$resp = $users->getUserTemp($args["token"])->getResult();
+		if(isset($resp->data->id)) {
+			$id = $resp->data->id;
+			$resp = $users->moveTempUser($id)->getResult();
+		} else {
+			$resp->ok = false;
+			$resp->msg = "El token [" . $args["token"] . "] no es válido.";
+			$resp->data = false;
+		}
 		$response->getBody()->write(json_encode($resp));
 		return $response
 			->withHeader("Content-Type", "application/json")
@@ -132,6 +241,87 @@
 			->withHeader("Content-Type", "application/json")
 			->withStatus($resp->ok ? 200 : 401);
     });
+
+	$app->post("/user/register", function (Request $request, Response $response, array $args) {
+		$fields = $request->getParsedBody();
+		
+		$verificar = [
+			"email" => [
+				"type" => "string",
+				"isValidMail" => true,
+				"unique" => "users"
+			],
+			"firstname" => [
+				"type" => "string",
+				"min" => 3,
+				"max" => 50
+			],
+			"lastname" => [
+				"type" => "string",
+				"min" => 3,
+				"max" => 50
+			],
+			"password" => [
+				"type" => "string",
+				"min" => 3,
+				"max" => 20
+			]
+		];
+
+		$validacion = new Validate($this->get("db"));
+		$validacion->validar($fields, $verificar);
+
+		$resp = null;
+
+		if($validacion->hasErrors()) {
+			$resp = $validacion->getErrors();
+		} else {
+			$fields["token"] = Prepare::randomString();
+			$users = new Users($this->get("db"));
+			$resp = $users->setRegister($fields)->getResult();
+			//Envío de mail con el token!!!
+			$nombre = Prepare::UCfirst($fields["lastname"]) . ", " . Prepare::UCfirst($fields["firstname"]);
+			$resp->mailSend = sendTokenRegister($fields["email"], $nombre, $fields["token"]);
+		}
+
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
+	$app->post("/user/password/recover", function (Request $request, Response $response, array $args) {
+		$fields = $request->getParsedBody();
+		
+		$verificar = [
+			"email" => [
+				"type" => "string",
+				"isValidMail" => true
+			]
+		];
+
+		$validacion = new Validate($this->get("db"));
+		$validacion->validar($fields, $verificar);
+
+		$resp = null;
+
+		if($validacion->hasErrors()) {
+			$resp = $validacion->getErrors();
+		} else {
+			$fields["token"] = Prepare::randomString();
+			$users = new Users($this->get("db"));
+			$resp = $users->setTempRecovery($fields); //->getResult();
+			//Envío de mail con el token!!!
+			if($resp->ok) {
+				$resp->mailSend = sendTokenRecover($fields["email"], $fields["token"]);
+			}
+		}
+
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
 
 	//[PATCH]
 
