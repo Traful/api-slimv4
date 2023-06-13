@@ -165,6 +165,28 @@
 									$this->errors[] = "No se ha especificado para la regla {$rule} una conexión a DB válida.";
 								}
 								break;
+							case "exist":
+								if(!is_null($this->conn)) {
+									try {
+										$query = "SELECT id FROM {$value} WHERE {$key} = :{$key}";
+										$stmt = $this->conn->prepare($query);
+										$stmt->bindParam(":" . $key, $v);
+										if($stmt->execute()) {
+											$count = $stmt->rowCount();
+											if($count == 0) {
+												$this->errors[] = "El valor [$v] no existe en la tabla {$value} -> {$key}.";
+											}
+										}
+									} catch (\PDOException $e) {
+										$this->errors[] = "{$rule}: " . $e->getMessage();
+										$this->errors[] = "{$rule}: " . $query;
+									} catch (Exception $e) {
+										$this->errors[] = "{$rule}: " . $e->getMessage();
+									}
+								} else {
+									$this->errors[] = "No se ha especificado para la regla {$rule} una conexión a DB válida.";
+								}
+								break;
 							default:
 								$this->errors[] = "{$rule} no es una regla válida.";
 								break;

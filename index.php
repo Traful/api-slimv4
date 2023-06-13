@@ -41,7 +41,9 @@
 		"ignore" => [
 			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/login",
 			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/register",
-			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/password/recover"
+			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/password/recover",
+			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/password/temp",
+			"/" . basename(dirname($_SERVER["PHP_SELF"])) . "/user/token/validate"
 			// -> esta ruta no está ignorada pero pasa igual, error!!!: /user/register/temp/{token}
 		],
 		"secret" => $_ENV["JWT_SECRET_KEY"],

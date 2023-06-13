@@ -29,6 +29,25 @@
 			return $this;
 		}
 
+		public function getUserPasswordTemp($token) {
+			$query = "SELECT * FROM passrecovery WHERE token = :token";
+			parent::getOne($query, ["token" => $token]);
+			return $this;
+		}
+
+		public function setNewPassword($id, $password) {
+			$query = "UPDATE $this->table_name SET password = :password WHERE id = :id";
+			$newPassword = password_hash($password, PASSWORD_BCRYPT);
+			parent::update($query, ["id" => $id, "password" => $newPassword]);
+			return $this;
+		}
+
+		public function deleteTempPassword($id) {
+			$query = "DELETE FROM passrecovery WHERE id = :id";
+			parent::update($query, ["id" => $id]);
+			return $this;
+		}
+
 		public function moveTempUser($id) {
 			$query = <<<EOD
 			INSERT INTO users (email, firstname, lastname, password)

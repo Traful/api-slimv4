@@ -2,6 +2,7 @@
 	use \Psr\Http\Message\ResponseInterface as Response;
 	use \Psr\Http\Message\ServerRequestInterface as Request;
 	use \Firebase\JWT\JWT;
+	use \Firebase\JWT\Key;
 	use \PHPMailer\PHPMailer\PHPMailer;
 	use \PHPMailer\PHPMailer\SMTP;
 	use \PHPMailer\PHPMailer\Exception;
@@ -11,6 +12,7 @@
 
 	function sendTokenRegister($email, $nombre, $token) {
 		$mail = new PHPMailer(true); //true = enable exceptions
+		$mail->CharSet = "UTF-8";
 		try {
 			//Server settings
 			//$mail->SMTPDebug = SMTP::DEBUG_SERVER;                      //Enable verbose debug output
@@ -63,6 +65,7 @@
 
 	function sendTokenRecover($email, $token) {
 		$mail = new PHPMailer(true);
+		$mail->CharSet = "UTF-8";
 		try {
 			$mail->SMTPDebug = 0;
 			$mail->isSMTP();
@@ -128,6 +131,48 @@
 			$resp->msg = "El token [" . $args["token"] . "] no es válido.";
 			$resp->data = false;
 		}
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
+	$app->get("/user/password/temp/{token}", function (Request $request, Response $response, array $args) {
+		$resp = new \stdClass();
+		$users = new Users($this->get("db"));
+		$respT = clone($users->getUserPasswordTemp($args["token"])->getResult());
+		if(isset($respT->data->id)) {
+			$id = $respT->data->id;
+			$resp = $users->moveTempUser($id)->getResult();
+			$resp->data = $respT->data;
+		} else {
+			$resp->ok = false;
+			$resp->msg = "El token [" . $args["token"] . "] no es válido.";
+			$resp->data = false;
+		}
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
+	$app->get("/user/token/validate/{token}", function (Request $request, Response $response, array $args) {
+		$resp = new \stdClass();
+		$resp->ok = false;
+		$resp->msg = "El token [" . $args["token"] . "] no es válido.";
+
+		//$jwt = JWT::encode($payload, $_SERVER["JWT_SECRET_KEY"], $_SERVER["JWT_ALGORITHM"]);
+		$token = str_replace("Bearer ", "", $args["token"]);
+		try {
+			$decoded = JWT::decode($token, new Key($_SERVER["JWT_SECRET_KEY"], $_SERVER["JWT_ALGORITHM"]));
+			$decoded->data->jwt = $args["token"];
+			$resp->ok = true;
+			$resp->msg = "";
+			$resp->data = $decoded->data;
+		} catch (\Throwable $th) {
+			$resp->data = false;
+		}
+
 		$response->getBody()->write(json_encode($resp));
 		return $response
 			->withHeader("Content-Type", "application/json")
@@ -240,7 +285,7 @@
 		return $response
 			->withHeader("Content-Type", "application/json")
 			->withStatus($resp->ok ? 200 : 401);
-    });
+	});
 
 	$app->post("/user/register", function (Request $request, Response $response, array $args) {
 		$fields = $request->getParsedBody();
@@ -324,6 +369,86 @@
 	});
 
 	//[PATCH]
+
+	$app->patch("/user/password", function (Request $request, Response $response, array $args) {
+		$fields = $request->getParsedBody();
+		
+		$verificar = [
+			"id" => [
+				"type" => "number",
+				"min" => 1
+			],
+			"password" => [
+				"type" => "string",
+				"min" => 3,
+				"max" => 20
+			]
+		];
+
+		$validacion = new Validate($this->get("db"));
+		$validacion->validar($fields, $verificar);
+
+		$resp = null;
+
+		if($validacion->hasErrors()) {
+			$resp = $validacion->getErrors();
+		} else {
+			$users = new Users($this->get("db"));
+			$resp = $users->setNewPassword($fields["id"], $fields["password"])->getResult();
+		}
+
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
+	$app->patch("/user/password/temp/update", function (Request $request, Response $response, array $args) {
+		$fields = $request->getParsedBody();
+		
+		$verificar = [
+			"id" => [
+				"type" => "number",
+				"min" => 1
+			],
+			"iduser" => [
+				"type" => "number",
+				"min" => 1
+			],
+			"password" => [
+				"type" => "string",
+				"min" => 3,
+				"max" => 20
+			],
+			"token" => [
+				"type" =>  "string",
+				"min" => 10,
+				"max" => 10,
+				"exist" => "passrecovery"
+			]
+		];
+
+		$validacion = new Validate($this->get("db"));
+		$validacion->validar($fields, $verificar);
+
+		$resp = null;
+
+		if($validacion->hasErrors()) {
+			$resp = $validacion->getErrors();
+		} else {
+			$users = new Users($this->get("db"));
+			$resp = $users->setNewPassword($fields["iduser"], $fields["password"])->getResult();
+			if($resp->ok) {
+				$users->deleteTempPassword($fields["id"]);
+			}
+		}
+
+		$response->getBody()->write(json_encode($resp));
+		return $response
+			->withHeader("Content-Type", "application/json")
+			->withStatus($resp->ok ? 200 : 409);
+	});
+
 
 	//[DELETE]
 
